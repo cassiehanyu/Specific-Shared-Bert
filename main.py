@@ -18,6 +18,12 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(RANDOM_SEED)
 
 
+def print_config(config):
+    for section in config.sections():
+        for param in config[section]:
+            print(param + "\t" + config[section][param])
+
+
 def train(args, config):
     if args.load_trained:
         epoch, arch, model, tokenizer, scores = load_checkpoint(args.pytorch_dump_path) 
@@ -100,7 +106,7 @@ def transfer(args, config):
             tr_loss += loss.item()
             global_step += 1
 
-            if args.eval_steps > 0 and step % args.eval_steps == 0:
+            if epoch == 1 and args.eval_steps > 0 and step % args.eval_steps == 0:
                 best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['model_path'], best_score, epoch, config['model_type'])
                 print("[train] batch {}, loss: {}, best score: {}".format(step, loss, best_score))
 
@@ -118,8 +124,8 @@ def eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, 
     scores_test = test(args, config, split="test", model=model, tokenizer=tokenizer, test_dataset=test_dataset)
     print_scores(scores_test)
     
-    if scores_dev[1][0] > best_score:
-        best_score = scores_dev[1][0]
+    if scores_dev[1][1] > best_score:
+        best_score = scores_dev[1][1]
         # Save pytorch-model
         model_path = "{}_{}".format(model_path, epoch)
         print("Save PyTorch model to {}".format(model_path))
@@ -217,6 +223,7 @@ if __name__ == '__main__':
 
     config = configparser.ConfigParser()
     config.read('specific_shared_bert.ini')
+    print_config(config)
     
     if args.mode == "train":
         print("Start training...")
