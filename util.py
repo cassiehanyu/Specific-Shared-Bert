@@ -9,6 +9,7 @@ import torch.nn as nn
 from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM, BertForSequenceClassification, BertForNextSentencePrediction
 from pytorch_pretrained_bert.optimization import BertAdam
 from specific_shared import SpecificShared
+from siamese_bert import SiameseBert
 
 
 def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", device="cuda", config=None):
@@ -20,6 +21,8 @@ def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", 
         model = BertForNextSentencePrediction.from_pretrained('bert-base-chinese')
     elif model_type == "specific_shared":
         model = SpecificShared(config)
+    elif model_type == "siamese_bert":
+        model = SiameseBert(config)
     else:
         print("[Error]: unsupported model type")
         return None, None
@@ -136,3 +139,23 @@ def get_p1(prediction_score_list, labels, data_path, dataset, data_name):
     p1 = acc / (len(a2score_label) - no_true)
     
     return p1
+
+
+def get_predicted_index(predictions):
+    if len(result.shape) > 1:
+        pred = np.argmax(predictions, axis=1)
+    else:
+        pred = np.rint(predictions)
+    return list(pred)
+
+
+def get_predicted_score(predictions):
+    ret = predictions
+    if len(predictions.shape) > 1:
+        if predictions.shape[1] == 2:
+            ret = predictions[:, 1]
+        elif predictions.shape[1] == 1:
+            ret = predictions[:, 0]
+        elif predictions.shape[1] == 3:
+            ret = predictions[:, 2]
+    return list(ret)

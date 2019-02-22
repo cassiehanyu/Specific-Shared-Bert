@@ -178,10 +178,10 @@ def test(args, config, split="test", model=None, tokenizer=None, test_dataset=No
         else:
             predictions = model(tokens_tensor, segments_tensor, mask_tensor)
 
-        predicted_index = list(torch.argmax(predictions, dim=1).cpu().numpy())
+        predicted_index = get_predicted_index(predictions.cpu().numpy())
         prediction_index_list += predicted_index
 
-        predicted_score = list(predictions[:, 1].cpu().detach().numpy())
+        predicted_score = get_predicted_score(predictions.cpu().detach().numpy())
         prediction_score_list.extend(predicted_score)
 
         labels.extend(list(label_tensor.cpu().detach().numpy()))
