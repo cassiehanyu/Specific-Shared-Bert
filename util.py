@@ -142,7 +142,7 @@ def get_p1(prediction_score_list, labels, data_path, dataset, data_name):
 
 
 def get_predicted_index(predictions):
-    if len(result.shape) > 1:
+    if len(predictions.shape) > 1:
         pred = np.argmax(predictions, axis=1)
     else:
         pred = np.rint(predictions)
