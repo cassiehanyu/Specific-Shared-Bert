@@ -30,9 +30,14 @@ def train(args, config):
     else:
         model, tokenizer = load_pretrained_model_tokenizer(config['model_type'], device=args.device)
 
-    train_dataset = load_data(config['data_path'], config['dataset'], config['train'], int(config['batch_size']), tokenizer, args.device)
-    validate_dataset = load_data(config['data_path'], config['dataset'], config['validate'], int(config['batch_size']), tokenizer, args.device)
-    test_dataset = load_data(config['data_path'], config['dataset'], config['test'], int(config['batch_size']), tokenizer, args.device)
+    if config['model_type'] == "siamese_bert":
+        train_dataset = load_data2(config['data_path'], config['dataset'], config['train'], int(config['batch_size']), tokenizer, args.device)
+        validate_dataset = load_data2(config['data_path'], config['dataset'], config['validate'], int(config['batch_size']), tokenizer, args.device)
+        test_dataset = load_data2(config['data_path'], config['dataset'], config['test'], int(config['batch_size']), tokenizer, args.device)
+    else:
+        train_dataset = load_data(config['data_path'], config['dataset'], config['train'], int(config['batch_size']), tokenizer, args.device)
+        validate_dataset = load_data(config['data_path'], config['dataset'], config['validate'], int(config['batch_size']), tokenizer, args.device)
+        test_dataset = load_data(config['data_path'], config['dataset'], config['test'], int(config['batch_size']), tokenizer, args.device)
 
     optimizer = init_optimizer(model, float(config['learning_rate']), float(config['warmup_proportion']), int(config['train_epoch']), len(train_dataset))
 
@@ -43,8 +48,8 @@ def train(args, config):
         tr_loss = 0
         random.shuffle(train_dataset)
         for step, batch in enumerate(tqdm(train_dataset)):
-            tokens_tensor, segments_tensor, mask_tensor, label_tensor = batch
-            loss = model(tokens_tensor, segments_tensor, mask_tensor, label_tensor)
+            # tokens_tensor, segments_tensor, mask_tensor, label_tensor = batch
+            loss = model(*batch)
 
             loss.backward()
             tr_loss += loss.item()
@@ -171,20 +176,22 @@ def test(args, config, split="test", model=None, tokenizer=None, test_dataset=No
     prediction_score_list, prediction_index_list, labels = [], [], []
     f = open(args.output_path, "w")
     lineno = 1
-    for tokens_tensor, segments_tensor, mask_tensor, label_tensor in test_dataset:
+    for batch in test_dataset:
         # predictions, _ = model.test_step(tokens_tensor, segments_tensor, mask_tensor)
         if config['model_type'] == "specific_shared":
-            predictions = model.test_step(tokens_tensor, segments_tensor, mask_tensor)
+            predictions = model.test_step(*batch[:3])
+        elif config['model_type'] == "siamese_bert":
+            predictions = model(*batch[:6])
         else:
-            predictions = model(tokens_tensor, segments_tensor, mask_tensor)
+            predictions = model(*batch[:3])
 
-        predicted_index = get_predicted_index(predictions.cpu().numpy())
+        predicted_index = get_predicted_index(predictions.cpu().detach().numpy())
         prediction_index_list += predicted_index
 
         predicted_score = get_predicted_score(predictions.cpu().detach().numpy())
         prediction_score_list.extend(predicted_score)
 
-        labels.extend(list(label_tensor.cpu().detach().numpy()))
+        labels.extend(list(batch[-1].cpu().detach().numpy()))
         for p in predicted_index:
             f.write("{}\t{}\n".format(lineno, p))
             lineno += 1
@@ -207,6 +214,7 @@ def test(args, config, split="test", model=None, tokenizer=None, test_dataset=No
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', default='train', help='[train, test]')
+    parser.add_argument('--config')
     parser.add_argument('--device', default='cuda', help='[cuda, cpu]')
     parser.add_argument('--batch_size', default=16, type=int, help='[1, 8, 16, 32]')
     parser.add_argument('--learning_rate', default=1e-5, type=float, help='')
@@ -222,7 +230,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
-    config.read('specific_shared_bert.ini')
+    config.read(args.config)
     print_config(config)
     
     if args.mode == "train":

@@ -68,6 +68,81 @@ def load_data(data_path, dataset, data_name, batch_size, tokenizer, device="cuda
     print('finish loading dataset', data_name)
     return data_set
 
+
+def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cuda"):
+    f = open(os.path.join(data_path, "{}/{}.csv".format(dataset, data_name)))
+    test_batch_left, testid_batch_left, mask_batch_left = [], [], []
+    test_batch_right, testid_batch_right, mask_batch_right = [], [], []
+    label_batch = []
+    data_set = []
+
+    for l in f:
+        label, a, b = l.replace("\n", "").split("\t")
+        a_index = tokenize_index(a, tokenizer)
+        b_index = tokenize_index(b, tokenizer)
+
+        a_segments_ids = [0] * len(a_index)
+        b_segments_ids = [1] * len(b_index)
+
+        testid_batch_left.append(torch.tensor(a_index))
+        testid_batch_right.append(torch.tensor(b_index))
+        test_batch.append(torch.tensor(combine_index))
+
+        testid_batch_left.append(torch.tensor(a_segments_ids))
+        testid_batch_right.append(torch.tensor(b_segments_ids))
+
+
+        mask_batch_left.append(torch.ones(len(a_index)))
+        mask_batch_right.append(torch.ones(len(b_index)))
+
+        label_batch.append(int(label))
+
+        if len(test_batch) >= batch_size:
+            # Convert inputs to PyTorch tensors
+            tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(device)
+            tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True, padding_value=0).to(device)
+
+            segments_tensor_left = torch.nn.utils.rnn.pad_sequence(testid_batch_left, batch_first=True, padding_value=0).to(device)
+            segments_tensor_right = torch.nn.utils.rnn.pad_sequence(testid_batch_right, batch_first=True, padding_value=0).to(device)
+
+            mask_tensor_left = torch.nn.utils.rnn.pad_sequence(mask_batch_left, batch_first=True, padding_value=0).to(device)
+            mask_tensor_right = torch.nn.utils.rnn.pad_sequence(mask_batch_right, batch_first=True, padding_value=0).to(device)
+
+            label_tensor = torch.tensor(label_batch, device=device)
+
+            data_set.append((tokens_tensor_left, tokens_tensor_right, segments_tensor_left,
+                segments_tensor_right, mask_tensor_left, mask_tensor_right, label_tensor))
+
+            test_batch_left, testid_batch_left, mask_batch_left = [], [], []
+            test_batch_right, testid_batch_right, mask_batch_right = [], [], []
+
+            label_batch = []
+
+    if len(test_batch) != 0:
+        # Convert inputs to PyTorch tensors
+        tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(device)
+        tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True, padding_value=0).to(device)
+
+        segments_tensor_left = torch.nn.utils.rnn.pad_sequence(testid_batch_left, batch_first=True, padding_value=0).to(device)
+        segments_tensor_right = torch.nn.utils.rnn.pad_sequence(testid_batch_right, batch_first=True, padding_value=0).to(device)
+
+        mask_tensor_left = torch.nn.utils.rnn.pad_sequence(mask_batch_left, batch_first=True, padding_value=0).to(device)
+        mask_tensor_right = torch.nn.utils.rnn.pad_sequence(mask_batch_right, batch_first=True, padding_value=0).to(device)
+
+        label_tensor = torch.tensor(label_batch, device=device)
+
+        data_set.append((tokens_tensor_left, tokens_tensor_right, segments_tensor_left,
+            segments_tensor_right, mask_tensor_left, mask_tensor_right, label_tensor))
+
+        test_batch_left, testid_batch_left, mask_batch_left = [], [], []
+        test_batch_right, testid_batch_right, mask_batch_right = [], [], []
+
+        label_batch = []
+
+    print('finish loading dataset', data_name)
+    return data_set
+
+
 def init_optimizer(model, learning_rate, warmup_proportion, num_train_epochs, data_size):
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'gamma', 'beta']
