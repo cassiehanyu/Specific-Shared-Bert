@@ -29,7 +29,7 @@ def train(args, config):
     if args.load_trained:
         epoch, arch, model, tokenizer, scores = load_checkpoint(args.pytorch_dump_path) 
     else:
-        model, tokenizer = load_pretrained_model_tokenizer(config['model_type'], device=args.device)
+        model, tokenizer = load_pretrained_model_tokenizer(config['model_type'], device=args.device, config=config)
 
     if config['model_type'] == "siamese_bert":
         train_dataset = load_data2(config['data_path'], config['dataset'], config['train'], int(config['batch_size']), tokenizer, args.device)

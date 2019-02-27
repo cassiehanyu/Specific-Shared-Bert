@@ -17,7 +17,7 @@ class nBert(nn.Module):
         self.embedding = bert.embeddings
 
         for i in range(self.n):
-        	encoder_pooler_list.append(Encoder_Pooler(copy.deepcopy(bert.encoder), copy.deepcopy(bert.pooler)))
+            self.encoder_pooler_list.append(Encoder_Pooler(copy.deepcopy(bert.encoder), copy.deepcopy(bert.pooler)))
 
         self.classifier = nn.Sequential(
             nn.Dropout(float(config['dropout'])),
@@ -47,8 +47,8 @@ class nBert(nn.Module):
         preds = self.classifier(feat_all)
 
         if label_tensor is not None:
-        	loss_fn = nn.CrossEntropyLoss()
-        	loss = loss_fn(preds, label_tensor)
-        	return loss
+            loss_fn = nn.CrossEntropyLoss()
+            loss = loss_fn(preds, label_tensor)
+            return loss
         else:
-        	return preds
+            return preds

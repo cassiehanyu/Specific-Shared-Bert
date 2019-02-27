@@ -10,6 +10,7 @@ from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM, B
 from pytorch_pretrained_bert.optimization import BertAdam
 from specific_shared import SpecificShared
 from siamese_bert import SiameseBert
+from n_bert import nBert
 
 
 def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", device="cuda", config=None):
@@ -23,6 +24,8 @@ def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", 
         model = SpecificShared(config)
     elif model_type == "siamese_bert":
         model = SiameseBert(config)
+    elif model_type == "n_bert":
+        model = nBert(config)
     else:
         print("[Error]: unsupported model type")
         return None, None
