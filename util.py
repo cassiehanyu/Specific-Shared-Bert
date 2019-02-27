@@ -93,7 +93,7 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
         mask_batch_left.append(torch.ones(len(a_index)))
         mask_batch_right.append(torch.ones(len(b_index)))
 
-        label_batch.append(int(label))
+        label_batch.append(float(label))
 
         if len(test_batch_left) >= batch_size:
             # Convert inputs to PyTorch tensors
@@ -129,8 +129,8 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
 
         label_tensor = torch.tensor(label_batch, device=device)
 
-        data_set.append((tokens_tensor_left, tokens_tensor_right, segments_tensor_left,
-            segments_tensor_right, mask_tensor_left, mask_tensor_right, label_tensor))
+        data_set.append((tokens_tensor_left, segments_tensor_left, mask_tensor_left,
+             tokens_tensor_right, segments_tensor_right, mask_tensor_right, label_tensor))
 
         test_batch_left, testid_batch_left, mask_batch_left = [], [], []
         test_batch_right, testid_batch_right, mask_batch_right = [], [], []
