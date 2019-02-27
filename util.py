@@ -82,22 +82,20 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
         b_index = tokenize_index(b, tokenizer)
 
         a_segments_ids = [0] * len(a_index)
-        b_segments_ids = [1] * len(b_index)
+        b_segments_ids = [0] * len(b_index)
 
-        testid_batch_left.append(torch.tensor(a_index))
-        testid_batch_right.append(torch.tensor(b_index))
-        test_batch.append(torch.tensor(combine_index))
+        test_batch_left.append(torch.tensor(a_index))
+        test_batch_right.append(torch.tensor(b_index))
 
         testid_batch_left.append(torch.tensor(a_segments_ids))
         testid_batch_right.append(torch.tensor(b_segments_ids))
-
 
         mask_batch_left.append(torch.ones(len(a_index)))
         mask_batch_right.append(torch.ones(len(b_index)))
 
         label_batch.append(int(label))
 
-        if len(test_batch) >= batch_size:
+        if len(test_batch_left) >= batch_size:
             # Convert inputs to PyTorch tensors
             tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(device)
             tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True, padding_value=0).to(device)
@@ -110,15 +108,15 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
 
             label_tensor = torch.tensor(label_batch, device=device)
 
-            data_set.append((tokens_tensor_left, tokens_tensor_right, segments_tensor_left,
-                segments_tensor_right, mask_tensor_left, mask_tensor_right, label_tensor))
+            data_set.append((tokens_tensor_left, segments_tensor_left, mask_tensor_left,
+             tokens_tensor_right, segments_tensor_right, mask_tensor_right, label_tensor))
 
             test_batch_left, testid_batch_left, mask_batch_left = [], [], []
             test_batch_right, testid_batch_right, mask_batch_right = [], [], []
 
             label_batch = []
 
-    if len(test_batch) != 0:
+    if len(test_batch_left) != 0:
         # Convert inputs to PyTorch tensors
         tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(device)
         tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True, padding_value=0).to(device)

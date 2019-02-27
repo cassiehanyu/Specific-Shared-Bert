@@ -7,6 +7,7 @@ import configparser
 from specific_shared import SpecificShared
 
 import torch
+import torch.nn as nn
 
 from util import *
 
@@ -49,7 +50,11 @@ def train(args, config):
         random.shuffle(train_dataset)
         for step, batch in enumerate(tqdm(train_dataset)):
             # tokens_tensor, segments_tensor, mask_tensor, label_tensor = batch
-            loss = model(*batch)
+            if config['model_type'] == "siamese_bert":
+                loss_fn = nn.MSELoss()
+                loss = model(*batch, loss_fn)
+            else:
+                loss = model(*batch)
 
             loss.backward()
             tr_loss += loss.item()
