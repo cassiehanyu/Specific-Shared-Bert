@@ -62,7 +62,7 @@ def train(args, config):
             model.zero_grad()
             global_step += 1
             
-            if args.eval_steps > 0 and step % args.eval_steps == 0:
+            if epoch == 1 and args.eval_steps > 0 and step % args.eval_steps == 0:
                 best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, args.pytorch_dump_path, best_score, epoch, config['model_type'])
 
         print("[train] loss: {}".format(tr_loss))
@@ -102,14 +102,15 @@ def transfer(args, config):
         # random.shuffle(s_train_dataset)
         random.shuffle(t_train_dataset)
 
-        while s_train_dataset and t_train_dataset:
-            next_from = np.random.choice(2, 1, p=[float(config['alpha']), 1-float(config['alpha'])])
-            next_train_batch = s_train_dataset.pop(0) if next_from else t_train_dataset.pop(0)
-            batches.append((next_train_batch, next_from))
+        # while s_train_dataset and t_train_dataset:
+        #     next_from = np.random.choice(2, 1, p=[float(config['alpha']), 1-float(config['alpha'])])
+        #     next_train_batch = s_train_dataset.pop(0) if next_from else t_train_dataset.pop(0)
+        #     batches.append((next_train_batch, next_from))
 
-        for step, (batch, next_from) in enumerate(tqdm(batches)):
+        for step, batch in enumerate(t_train_dataset):
+            next_from = 0
             tokens_tensor, segments_tensor, mask_tensor, label_tensor = batch
-            s_train_dataset.append(batch) if next_from else t_train_dataset.append(batch)
+            # s_train_dataset.append(batch) if next_from else t_train_dataset.append(batch)
 
             loss, preds = model.train_step(next_from, loss_fn, optimizer, tokens_tensor, segments_tensor, mask_tensor, label_tensor)
 
@@ -134,8 +135,8 @@ def eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, 
     scores_test = test(args, config, split="test", model=model, tokenizer=tokenizer, test_dataset=test_dataset)
     print_scores(scores_test)
     
-    if scores_dev[1][1] > best_score:
-        best_score = scores_dev[1][1]
+    if scores_dev[1][0] > best_score:
+        best_score = scores_dev[1][0]
         # Save pytorch-model
         model_path = "{}_{}".format(model_path, epoch)
         print("Save PyTorch model to {}".format(model_path))
@@ -203,17 +204,19 @@ def test(args, config, split="test", model=None, tokenizer=None, test_dataset=No
         del predictions
     
     f.close()
-    acc = get_acc(prediction_index_list, labels)
-    p1 = get_p1(prediction_score_list, labels, config['data_path'], config['dataset'], config[split])
 
-    # p1 = get_p1(prediction_score_list, labels, args.data_path, args.data_name, args.data_name + "_" + split)
+    # acc = get_acc(prediction_index_list, labels)
+    # p1 = get_p1(prediction_score_list, labels, config['data_path'], config['dataset'], config[split])
+    # pre, rec, f1 = get_pre_rec_f1(prediction_index_list, labels)
 
-    pre, rec, f1 = get_pre_rec_f1(prediction_index_list, labels)
+    pearsonr = get_pearsonr(prediction_score_list, labels)
 
     torch.cuda.empty_cache()
     model.train()
     
-    return [["acc", "p@1", "precision", "recall", "f1"], [acc, p1, pre, rec, f1]]
+    # return [["acc", "p@1", "precision", "recall", "f1"], [acc, p1, pre, rec, f1]]
+
+    return [["pearsonr"], [pearsonr]]
 
 
 if __name__ == '__main__':

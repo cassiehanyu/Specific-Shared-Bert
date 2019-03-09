@@ -11,6 +11,7 @@ from pytorch_pretrained_bert.optimization import BertAdam
 from specific_shared import SpecificShared
 from siamese_bert import SiameseBert
 from n_bert import nBert
+from bert_sts import BertSts
 
 
 def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", device="cuda", config=None):
@@ -26,6 +27,8 @@ def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", 
         model = SiameseBert(config)
     elif model_type == "n_bert":
         model = nBert(config)
+    elif model_type == "bert_sts":
+        model = BertSts(config)
     else:
         print("[Error]: unsupported model type")
         return None, None
@@ -41,6 +44,7 @@ def load_data(data_path, dataset, data_name, batch_size, tokenizer, device="cuda
     test_batch, testid_batch, mask_batch, label_batch = [], [], [], []
     data_set = []
     for l in f:
+        # print(l.strip().split("\t"))
         label, a, b = l.replace("\n", "").split("\t")
         a_index = tokenize_index(a, tokenizer)
         b_index = tokenize_index(b, tokenizer)
@@ -49,7 +53,7 @@ def load_data(data_path, dataset, data_name, batch_size, tokenizer, device="cuda
         test_batch.append(torch.tensor(combine_index))
         testid_batch.append(torch.tensor(segments_ids))
         mask_batch.append(torch.ones(len(combine_index)))
-        label_batch.append(int(label))
+        label_batch.append(float(label))
         if len(test_batch) >= batch_size:
             # Convert inputs to PyTorch tensors
             tokens_tensor = torch.nn.utils.rnn.pad_sequence(test_batch, batch_first=True, padding_value=0).to(device)
@@ -235,3 +239,9 @@ def get_predicted_score(predictions):
         elif predictions.shape[1] == 3:
             ret = predictions[:, 2]
     return list(ret)
+
+
+def get_pearsonr(pred, label):
+    print(len(pred))
+    print(len(label))
+    return np.corrcoef(pred, label)[0, 1]
