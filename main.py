@@ -8,6 +8,7 @@ from specific_shared import SpecificShared
 
 import torch
 import torch.nn as nn
+from sklearn.metrics import matthews_corrcoef 
 
 from util import *
 
@@ -27,24 +28,35 @@ def print_config(config):
 
 def train(args, config):
     if args.load_trained:
-        epoch, arch, model, tokenizer, scores = load_checkpoint(args.pytorch_dump_path) 
+        epoch, arch, model, tokenizer, scores = load_checkpoint(config['model_path']) 
     else:
         model, tokenizer = load_pretrained_model_tokenizer(config['model_type'], device=args.device, config=config)
 
     if config['model_type'] == "siamese_bert":
-        train_dataset = load_data2(config['data_path'], config['dataset'], config['train'], int(config['batch_size']), tokenizer, args.device)
-        validate_dataset = load_data2(config['data_path'], config['dataset'], config['validate'], int(config['batch_size']), tokenizer, args.device)
-        test_dataset = load_data2(config['data_path'], config['dataset'], config['test'], int(config['batch_size']), tokenizer, args.device)
+        train_dataset = load_data2(config['data_path'], config['dataset'], config['train'],
+            int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
+
+        validate_dataset = load_data2(config['data_path'], config['dataset'], config['validate'],
+            int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
+
+        test_dataset = load_data2(config['data_path'], config['dataset'], config['test'],
+            int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
     else:
-        train_dataset = load_data(config['data_path'], config['dataset'], config['train'], int(config['batch_size']), tokenizer, args.device)
-        validate_dataset = load_data(config['data_path'], config['dataset'], config['validate'], int(config['batch_size']), tokenizer, args.device)
-        test_dataset = load_data(config['data_path'], config['dataset'], config['test'], int(config['batch_size']), tokenizer, args.device)
+        train_dataset = load_data(config['data_path'], config['dataset'], config['train'],
+            int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
+
+        validate_dataset = load_data(config['data_path'], config['dataset'], config['validate'],
+            int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
+
+        test_dataset = load_data(config['data_path'], config['dataset'], config['test'],
+            int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
 
     optimizer = init_optimizer(model, float(config['learning_rate']), float(config['warmup_proportion']), int(config['train_epoch']), len(train_dataset))
 
     model.train()
     global_step = 0
     best_score = 0
+    model_path = ""
     for epoch in range(1, int(config['train_epoch'])+1):
         tr_loss = 0
         random.shuffle(train_dataset)
@@ -63,12 +75,12 @@ def train(args, config):
             global_step += 1
             
             if epoch == 1 and args.eval_steps > 0 and step % args.eval_steps == 0:
-                best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, args.pytorch_dump_path, best_score, epoch, config['model_type'])
+                best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['model_path'], best_score, epoch, config['model_type'])
 
         print("[train] loss: {}".format(tr_loss))
         best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['model_path'], best_score, epoch, config['model_type'])
 
-    scores = test(args, config,  split="test")
+    scores, _ = test(args, config,  split="test")
     print_scores(scores)
 
 
@@ -130,27 +142,35 @@ def transfer(args, config):
 
 
 def eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, model_path, best_score, epoch, arch):
-    scores_dev = test(args, config, split="validate", model=model, tokenizer=tokenizer, test_dataset=validate_dataset)
+    scores_dev, _ = test(args, config, split="validate", model=model, tokenizer=tokenizer, test_dataset=validate_dataset)
     print_scores(scores_dev, mode="dev")
-    scores_test = test(args, config, split="test", model=model, tokenizer=tokenizer, test_dataset=test_dataset)
+    scores_test, prediction_list = test(args, config, split="test", model=model, tokenizer=tokenizer, test_dataset=test_dataset)
     print_scores(scores_test)
-    
-    if scores_dev[1][0] > best_score:
-        best_score = scores_dev[1][0]
+
+    metrics = [x.strip() for x in config['metrics'].split(',')]
+
+    if scores_dev[metrics[0]] > best_score:
+        best_score = scores_dev[metrics[0]]
         # Save pytorch-model
-        model_path = "{}_{}".format(model_path, epoch)
         print("Save PyTorch model to {}".format(model_path))
-    # save_checkpoint(epoch, arch, model, tokenizer, scores_dev, model_path)
+
+        if args.record_result:
+            with open('data/submission/{}.tsv'.format(config['result_path']), 'w+') as f:
+                f.write("index\tprediction\n")
+                for index, pred in enumerate(prediction_list):
+                    f.write("{}\t{}\n".format(index, pred))
+
+        save_checkpoint(epoch, arch, model, tokenizer, scores_dev, model_path)
 
     return best_score
 
 
 def print_scores(scores, mode="test"):
-    print("")
+    print()
     print("[{}] ".format(mode), end="")
-    for sn, score in zip(scores[0], scores[1]):
+    for sn, score in scores.items():
         print("{}: {}".format(sn, score), end=" ")
-    print("")
+    print()
 
 
 def save_checkpoint(epoch, arch, model, tokenizer, scores, filename):
@@ -172,11 +192,11 @@ def load_checkpoint(filename):
 
 def test(args, config, split="test", model=None, tokenizer=None, test_dataset=None):
     if model is None:
-        epoch, arch, model, tokenizer, scores = load_checkpoint(args.pytorch_dump_path)
+        epoch, arch, model, tokenizer, scores = load_checkpoint(config['model_path'])
     if test_dataset is None: 
         print("Load test set")
-        test_dataset = load_data(config['data_path'], config['dataset'], config[split], int(config['s_batch_size']), tokenizer, args.device)
-        # test_dataset = load_data(args.data_path, args.data_name, args.data_name + "_" + split, args.batch_size, tokenizer, args.device)
+        test_dataset = load_data(config['data_path'], config['dataset'], config[split], 
+            int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
     
     model.eval()
     prediction_score_list, prediction_index_list, labels = [], [], []
@@ -205,18 +225,32 @@ def test(args, config, split="test", model=None, tokenizer=None, test_dataset=No
     
     f.close()
 
-    # acc = get_acc(prediction_index_list, labels)
-    # p1 = get_p1(prediction_score_list, labels, config['data_path'], config['dataset'], config[split])
-    # pre, rec, f1 = get_pre_rec_f1(prediction_index_list, labels)
+    pearsonr, spearmanr, acc, p1, prec, rec, f1 = 0, 0, 0, 0, 0, 0, 0
+    metrics = [x.strip() for x in config['metrics'].split(',')]
+    scores = {}
+    # if split != "test":
+    if 'pearsonr' in metrics: scores['pearsonr'] = get_pearsonr(prediction_score_list, labels)
+    if 'spearmanr' in metrics: scores['spearmanr'] = get_spearmanr(prediction_score_list, labels)
 
-    pearsonr = get_pearsonr(prediction_score_list, labels)
+    if 'acc' in metrics: scores['acc'] = get_acc(prediction_index_list, labels)
+    if 'p@1' in metrics: scores['p@1'] = get_p1(prediction_score_list, labels, config['data_path'], config['dataset'], config[split])
+    if 'matthewsr' in metrics: scores['matthewsr'] = matthews_corrcoef(labels, prediction_index_list)
+
+    if 'precision' in metrics or "recall" in metrics or "f1" in metrics:
+        pre, rec, f1 = get_pre_rec_f1(prediction_index_list, labels)
+        scores['precision'] = pre
+        scores['recall'] = rec
+        scores['f1'] = f1
+
+    if metrics[0] in ['pearsonr', 'spearmanr', 'p@1']:
+        return_list = prediction_score_list
+    elif metrics[0] in ['acc', 'precision', 'recall', 'f1', 'matthewsr']:
+        return_list = prediction_index_list
 
     torch.cuda.empty_cache()
     model.train()
     
-    # return [["acc", "p@1", "precision", "recall", "f1"], [acc, p1, pre, rec, f1]]
-
-    return [["pearsonr"], [pearsonr]]
+    return scores, return_list
 
 
 if __name__ == '__main__':
@@ -224,17 +258,10 @@ if __name__ == '__main__':
     parser.add_argument('--mode', default='train', help='[train, test]')
     parser.add_argument('--config')
     parser.add_argument('--device', default='cuda', help='[cuda, cpu]')
-    parser.add_argument('--batch_size', default=16, type=int, help='[1, 8, 16, 32]')
-    parser.add_argument('--learning_rate', default=1e-5, type=float, help='')
-    parser.add_argument('--num_train_epochs', default=8, type=int, help='')
-    parser.add_argument('--data_path', default='/data/cassie/ShortTextSemanticSimilarity/data/corpora/', help='')
-    parser.add_argument('--data_name', default='youzan_old', help='annotation or youzan_new or tweet')
-    parser.add_argument('--pytorch_dump_path', default='saved.model', help='')
     parser.add_argument('--load_trained', action='store_true', default=False, help='')
+    parser.add_argument('--record_result', action='store_true', default=False, help='determine if record preds')
     parser.add_argument('--eval_steps', default=2500, type=int, help='evaluation per [eval_steps] steps, -1 for evaluation per epoch')
-    parser.add_argument('--model_type', default='BertForSequenceClassification', help='')
     parser.add_argument('--output_path', default='prediction.tmp', help='')
-    parser.add_argument('--warmup_proportion', default=0.1, type=float, help='Proportion of training to perform linear learning rate warmup. E.g., 0.1 = 10%% of training.')
     args = parser.parse_args()
 
     config = configparser.ConfigParser()

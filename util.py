@@ -5,6 +5,8 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+from scipy.stats import spearmanr
+from pydoc import locate
 
 from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM, BertForSequenceClassification, BertForNextSentencePrediction
 from pytorch_pretrained_bert.optimization import BertAdam
@@ -12,6 +14,7 @@ from specific_shared import SpecificShared
 from siamese_bert import SiameseBert
 from n_bert import nBert
 from bert_sts import BertSts
+from bert_fine_tune import BertFineTune
 
 
 def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", device="cuda", config=None):
@@ -29,31 +32,78 @@ def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", 
         model = nBert(config)
     elif model_type == "bert_sts":
         model = BertSts(config)
+    elif model_type == "bert_fine_tune":
+        model = BertFineTune(config)
     else:
         print("[Error]: unsupported model type")
         return None, None
     
-    tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     model.to(device)
     print("Initialized model and tokenizer")
     return model, tokenizer
 
 
-def load_data(data_path, dataset, data_name, batch_size, tokenizer, device="cuda"):
+def truncate_seq_pair(tokens_a, tokens_b, max_length):
+    while True:
+        total_length = len(tokens_a) + len(tokens_b)
+        if total_length <= max_length:
+            break
+        if len(tokens_a) > len(tokens_b):
+            tokens_a.pop()
+        else:
+            tokens_b.pop()
+
+
+def tokenize_one(text, tokenizer):
+    max_length = 128
+    tokens = tokenizer.tokenize(text)
+
+    if len(tokens) > max_length - 2:
+        tokens = tokens[:(max_length-2)]
+
+    tokens = ["[CLS]"] + tokens + ["[SEP]"]
+    segments_ids = [0] * len(tokens)
+
+    combine_index = tokenizer.convert_tokens_to_ids(tokens)
+
+    return combine_index, segments_ids
+
+
+def tokenize_two(text_a, text_b, tokenizer):
+    max_length = 128
+    tokens_a = tokenizer.tokenize(text_a)
+    tokens_b = tokenizer.tokenize(text_b)
+
+    truncate_seq_pair(tokens_a, tokens_b, max_length - 3)
+
+    tokens = ["[CLS]"] + tokens_a + ["[SEP]"] + tokens_b + ["[SEP]"]
+    segments_ids = [0] * (len(tokens_a) + 2) + [1] * (len(tokens_b) + 1)
+
+    combine_index = tokenizer.convert_tokens_to_ids(tokens)
+
+    return combine_index, segments_ids
+
+
+def load_data(data_path, dataset, data_name, batch_size, tokenizer, device="cuda", label_type='int'):
     f = open(os.path.join(data_path, "{}/{}.csv".format(dataset, data_name)))
     test_batch, testid_batch, mask_batch, label_batch = [], [], [], []
     data_set = []
     for l in f:
-        # print(l.strip().split("\t"))
-        label, a, b = l.replace("\n", "").split("\t")
-        a_index = tokenize_index(a, tokenizer)
-        b_index = tokenize_index(b, tokenizer)
-        combine_index = a_index + b_index
-        segments_ids = [0] * len(a_index) + [1] * len(b_index)
+        data = l.replace("\n", "").split("\t")
+
+        if len(data) == 3:
+            label, a, b = data
+            combine_index, segments_ids = tokenize_two(a, b, tokenizer)
+        elif len(data) == 2:
+            label, a = data
+            combine_index, segments_ids = tokenize_one(a, tokenizer)
+
         test_batch.append(torch.tensor(combine_index))
         testid_batch.append(torch.tensor(segments_ids))
         mask_batch.append(torch.ones(len(combine_index)))
-        label_batch.append(float(label))
+        label_batch.append(locate(label_type)(label))
+
         if len(test_batch) >= batch_size:
             # Convert inputs to PyTorch tensors
             tokens_tensor = torch.nn.utils.rnn.pad_sequence(test_batch, batch_first=True, padding_value=0).to(device)
@@ -242,6 +292,8 @@ def get_predicted_score(predictions):
 
 
 def get_pearsonr(pred, label):
-    print(len(pred))
-    print(len(label))
     return np.corrcoef(pred, label)[0, 1]
+
+
+def get_spearmanr(pred, label):
+    return spearmanr(pred, label)[0]
