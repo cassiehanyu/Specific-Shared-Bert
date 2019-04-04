@@ -10,9 +10,11 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import matthews_corrcoef 
 
+from pytorch_pretrained_bert import BertForSequenceClassification, BertConfig, BertTokenizer
+
 from util import *
 
-RANDOM_SEED = 12345
+RANDOM_SEED = 3324
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
@@ -28,7 +30,7 @@ def print_config(config):
 
 def train(args, config):
     if args.load_trained:
-        epoch, arch, model, tokenizer, scores = load_checkpoint(config['model_path']) 
+        epoch, arch, model, tokenizer, scores = load_checkpoint(config['load_path']) 
     else:
         model, tokenizer = load_pretrained_model_tokenizer(config['model_type'], device=args.device, config=config)
 
@@ -51,7 +53,10 @@ def train(args, config):
         test_dataset = load_data(config['data_path'], config['dataset'], config['test'],
             int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
 
-    optimizer = init_optimizer(model, float(config['learning_rate']), float(config['warmup_proportion']), int(config['train_epoch']), len(train_dataset))
+    train_sampler = RandomSampler(train_dataset)
+    train_dataset_loader = DataLoader(train_dataset, sampler=train_sampler, batch_size=int(config['batch_size']))
+
+    optimizer = init_optimizer(model, float(config['learning_rate']), float(config['warmup_proportion']), int(config['train_epoch']), len(train_dataset) / int(config['batch_size']))
 
     model.train()
     global_step = 0
@@ -59,8 +64,7 @@ def train(args, config):
     model_path = ""
     for epoch in range(1, int(config['train_epoch'])+1):
         tr_loss = 0
-        random.shuffle(train_dataset)
-        for step, batch in enumerate(tqdm(train_dataset)):
+        for step, batch in enumerate(tqdm(train_dataset_loader)):
             # tokens_tensor, segments_tensor, mask_tensor, label_tensor = batch
             if config['model_type'] == "siamese_bert":
                 loss_fn = nn.MSELoss()
@@ -75,12 +79,12 @@ def train(args, config):
             global_step += 1
             
             if epoch == 1 and args.eval_steps > 0 and step % args.eval_steps == 0:
-                best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['model_path'], best_score, epoch, config['model_type'])
+                best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['save_path'], best_score, epoch, config['model_type'])
 
         print("[train] loss: {}".format(tr_loss))
-        best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['model_path'], best_score, epoch, config['model_type'])
+        best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['save_path'], best_score, epoch, config['model_type'])
 
-    scores, _ = test(args, config,  split="test")
+    #scores, _ = test(args, config,  split="test")
     print_scores(scores)
 
 
@@ -90,11 +94,11 @@ def transfer(args, config):
     else:
         model, tokenizer = load_pretrained_model_tokenizer(config['model_type'], device=args.device, config=config)
 
-    s_train_dataset = load_data(config['data_path'], config['dataset'], config['s_train'], int(config['s_batch_size']), tokenizer, args.device)
-    t_train_dataset = load_data(config['data_path'], config['dataset'], config['t_train'], int(config['t_batch_size']), tokenizer, args.device)
+    s_train_dataset = load_data(config['data_path'], config['dataset'], config['s_train'], int(config['batch_size']), tokenizer, args.device)
+    t_train_dataset = load_data(config['data_path'], config['dataset'], config['t_train'], int(config['batch_size']), tokenizer, args.device)
 
-    validate_dataset = load_data(config['data_path'], config['dataset'], config['validate'], int(config['t_batch_size']), tokenizer, args.device)
-    test_dataset = load_data(config['data_path'], config['dataset'], config['test'], int(config['t_batch_size']), tokenizer, args.device)
+    validate_dataset = load_data(config['data_path'], config['dataset'], config['validate'], int(config['batch_size']), tokenizer, args.device)
+    test_dataset = load_data(config['data_path'], config['dataset'], config['test'], int(config['batch_size']), tokenizer, args.device)
 
     print(len(t_train_dataset))
 
@@ -104,8 +108,8 @@ def transfer(args, config):
     best_score = 0
 
     global_step = 0
+    model.train()
     for epoch in range(1, int(config['train_epoch'])+1):
-        model.train()
 
         batches = []
         class_labels = []
@@ -114,15 +118,15 @@ def transfer(args, config):
         # random.shuffle(s_train_dataset)
         random.shuffle(t_train_dataset)
 
-        # while s_train_dataset and t_train_dataset:
-        #     next_from = np.random.choice(2, 1, p=[float(config['alpha']), 1-float(config['alpha'])])
-        #     next_train_batch = s_train_dataset.pop(0) if next_from else t_train_dataset.pop(0)
-        #     batches.append((next_train_batch, next_from))
+        while s_train_dataset and t_train_dataset:
+            next_from = np.random.choice(2, 1, p=[float(config['alpha']), 1-float(config['alpha'])])
+            next_train_batch = s_train_dataset.pop(0) if next_from else t_train_dataset.pop(0)
+            batches.append((next_train_batch, next_from))
 
-        for step, batch in enumerate(t_train_dataset):
-            next_from = 0
+        for step, (next_from, batch) in enumerate(batches):
+            # next_from = 0
             tokens_tensor, segments_tensor, mask_tensor, label_tensor = batch
-            # s_train_dataset.append(batch) if next_from else t_train_dataset.append(batch)
+            s_train_dataset.append(batch) if next_from else t_train_dataset.append(batch)
 
             loss, preds = model.train_step(next_from, loss_fn, optimizer, tokens_tensor, segments_tensor, mask_tensor, label_tensor)
 
@@ -130,11 +134,11 @@ def transfer(args, config):
             global_step += 1
 
             if epoch == 1 and args.eval_steps > 0 and step % args.eval_steps == 0:
-                best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['model_path'], best_score, epoch, config['model_type'])
+                best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['save_path'], best_score, epoch, config['model_type'])
                 print("[train] batch {}, loss: {}, best score: {}".format(step, loss, best_score))
 
         print("[train] loss: {}".format(tr_loss))
-        best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['model_path'], best_score, epoch, config['model_type'])
+        best_score = eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, config['save_path'], best_score, epoch, config['model_type'])
 
     scores = test(args, config, split="test")
     print_scores(scores)
@@ -142,12 +146,16 @@ def transfer(args, config):
 
 
 def eval_select(args, config, model, tokenizer, validate_dataset, test_dataset, model_path, best_score, epoch, arch):
+    metrics = [x.strip() for x in config['metrics'].split(',')]
+
     scores_dev, _ = test(args, config, split="validate", model=model, tokenizer=tokenizer, test_dataset=validate_dataset)
     print_scores(scores_dev, mode="dev")
+
+    # scores_dev2, _ = test(args, config, split="validate2", model=model, tokenizer=tokenizer, test_dataset=validate_dataset)
+    # print_scores(scores_dev2, mode="dev")
+
     scores_test, prediction_list = test(args, config, split="test", model=model, tokenizer=tokenizer, test_dataset=test_dataset)
     print_scores(scores_test)
-
-    metrics = [x.strip() for x in config['metrics'].split(',')]
 
     if scores_dev[metrics[0]] > best_score:
         best_score = scores_dev[metrics[0]]
@@ -184,6 +192,13 @@ def save_checkpoint(epoch, arch, model, tokenizer, scores, filename):
     torch.save(state, filename)
 
 
+def assign_new_model(model, config):
+    new_model = BertFineTune(config)
+    new_model.bert = model.bert
+    new_model.classifier = model.classifier
+    return new_model
+
+
 def load_checkpoint(filename):
     print("Load PyTorch model from {}".format(filename))
     state = torch.load(filename)
@@ -192,17 +207,28 @@ def load_checkpoint(filename):
 
 def test(args, config, split="test", model=None, tokenizer=None, test_dataset=None):
     if model is None:
-        epoch, arch, model, tokenizer, scores = load_checkpoint(config['model_path'])
+        epoch, arch, model, tokenizer, scores = load_checkpoint(config['save_path'])
+
+    # if model is None:
+    #     bert_config = BertConfig('youzan_output/bert_config.json')
+    #     model = BertForSequenceClassification(bert_config, num_labels=2)
+    #     model.load_state_dict(torch.load('youzan_output/pytorch_model.bin'))
+    #     model.to('cuda')
+    #     tokenizer = BertTokenizer.from_pretrained(config['bert_model'])
+
     if test_dataset is None: 
         print("Load test set")
         test_dataset = load_data(config['data_path'], config['dataset'], config[split], 
             int(config['batch_size']), tokenizer, args.device, label_type=config['label_type'])
     
+    test_sampler = SequentialSampler(test_dataset)
+    test_dataset_loader = DataLoader(test_dataset, sampler=test_sampler, batch_size=int(config['batch_size']))
+
     model.eval()
     prediction_score_list, prediction_index_list, labels = [], [], []
     f = open(args.output_path, "w")
     lineno = 1
-    for batch in test_dataset:
+    for batch in test_dataset_loader:
         # predictions, _ = model.test_step(tokens_tensor, segments_tensor, mask_tensor)
         if config['model_type'] == "specific_shared":
             predictions = model.test_step(*batch[:3])
@@ -246,6 +272,8 @@ def test(args, config, split="test", model=None, tokenizer=None, test_dataset=No
         return_list = prediction_score_list
     elif metrics[0] in ['acc', 'precision', 'recall', 'f1', 'matthewsr']:
         return_list = prediction_index_list
+    else:
+        return_list = prediction_score_list
 
     torch.cuda.empty_cache()
     model.train()
@@ -260,7 +288,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cuda', help='[cuda, cpu]')
     parser.add_argument('--load_trained', action='store_true', default=False, help='')
     parser.add_argument('--record_result', action='store_true', default=False, help='determine if record preds')
-    parser.add_argument('--eval_steps', default=2500, type=int, help='evaluation per [eval_steps] steps, -1 for evaluation per epoch')
+    parser.add_argument('--eval_steps', default=10000, type=int, help='evaluation per [eval_steps] steps, -1 for evaluation per epoch')
     parser.add_argument('--output_path', default='prediction.tmp', help='')
     args = parser.parse_args()
 
@@ -275,5 +303,14 @@ if __name__ == '__main__':
         print("Start transferring...")
         transfer(args, config['settings'])
     else:
-        scores = test(args)
+        scores, prediction_list = test(args, config['settings'], split="validate")
+        print_scores(scores, mode="dev")
+        # scores, prediction_list = test(args, config['settings'], split="validate2")
+        scores, prediction_list = test(args, config['settings'])
+
+        # with open('data/submission/{}.tsv'.format(config['settings']['result_path']), 'w+') as f:
+        #     f.write("index\tprediction\n")
+        #     for index, pred in enumerate(prediction_list):
+        #         f.write("{}\t{}\n".format(index, pred))
+
         print_scores(scores)

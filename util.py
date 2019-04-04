@@ -6,6 +6,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 from scipy.stats import spearmanr
+from scipy.special import softmax
+
 from pydoc import locate
 
 from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM, BertForSequenceClassification, BertForNextSentencePrediction
@@ -15,15 +17,17 @@ from siamese_bert import SiameseBert
 from n_bert import nBert
 from bert_sts import BertSts
 from bert_fine_tune import BertFineTune
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
 
 
 def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", device="cuda", config=None):
+    bert_model = config['bert_model']
     # Load pre-trained model (weights)
     if model_type == "BertForSequenceClassification":
-        model = BertForSequenceClassification.from_pretrained('bert-base-chinese', num_labels=2)
+        model = BertForSequenceClassification.from_pretrained(bert_model, num_labels=2)
         # Load pre-trained model tokenizer (vocabulary)
     elif model_type == "BertForNextSentencePrediction":
-        model = BertForNextSentencePrediction.from_pretrained('bert-base-chinese')
+        model = BertForNextSentencePrediction.from_pretrained(bert_model)
     elif model_type == "specific_shared":
         model = SpecificShared(config)
     elif model_type == "siamese_bert":
@@ -38,7 +42,7 @@ def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", 
         print("[Error]: unsupported model type")
         return None, None
     
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    tokenizer = BertTokenizer.from_pretrained(bert_model)
     model.to(device)
     print("Initialized model and tokenizer")
     return model, tokenizer
@@ -56,7 +60,7 @@ def truncate_seq_pair(tokens_a, tokens_b, max_length):
 
 
 def tokenize_one(text, tokenizer):
-    max_length = 128
+    max_length = 50
     tokens = tokenizer.tokenize(text)
 
     if len(tokens) > max_length - 2:
@@ -71,7 +75,7 @@ def tokenize_one(text, tokenizer):
 
 
 def tokenize_two(text_a, text_b, tokenizer):
-    max_length = 128
+    max_length = 50
     tokens_a = tokenizer.tokenize(text_a)
     tokens_b = tokenizer.tokenize(text_b)
 
@@ -88,7 +92,6 @@ def tokenize_two(text_a, text_b, tokenizer):
 def load_data(data_path, dataset, data_name, batch_size, tokenizer, device="cuda", label_type='int'):
     f = open(os.path.join(data_path, "{}/{}.csv".format(dataset, data_name)))
     test_batch, testid_batch, mask_batch, label_batch = [], [], [], []
-    data_set = []
     for l in f:
         data = l.replace("\n", "").split("\t")
 
@@ -99,29 +102,24 @@ def load_data(data_path, dataset, data_name, batch_size, tokenizer, device="cuda
             label, a = data
             combine_index, segments_ids = tokenize_one(a, tokenizer)
 
-        test_batch.append(torch.tensor(combine_index))
-        testid_batch.append(torch.tensor(segments_ids))
-        mask_batch.append(torch.ones(len(combine_index)))
+        mask_ids = [1] * len(combine_index)
+        pad = [0] * (50 - len(combine_index))
+        combine_index += pad
+        segments_ids += pad
+        mask_ids += pad
+
+        test_batch.append(combine_index)
+        testid_batch.append(segments_ids)
+        mask_batch.append(mask_ids)
         label_batch.append(locate(label_type)(label))
 
-        if len(test_batch) >= batch_size:
-            # Convert inputs to PyTorch tensors
-            tokens_tensor = torch.nn.utils.rnn.pad_sequence(test_batch, batch_first=True, padding_value=0).to(device)
-            segments_tensor = torch.nn.utils.rnn.pad_sequence(testid_batch, batch_first=True, padding_value=0).to(device)
-            mask_tensor = torch.nn.utils.rnn.pad_sequence(mask_batch, batch_first=True, padding_value=0).to(device)
-            label_tensor = torch.tensor(label_batch, device=device)
-            data_set.append((tokens_tensor, segments_tensor, mask_tensor, label_tensor))
-            test_batch, testid_batch, mask_batch, label_batch = [], [], [], []
+    tokens_tensor = torch.tensor(test_batch, device=device, dtype=torch.long)
+    segments_tensor = torch.tensor(testid_batch, device=device, dtype=torch.long)
+    mask_tensor = torch.tensor(mask_batch, device=device, dtype=torch.long)
+    label_tensor = torch.tensor(label_batch, device=device, dtype=torch.long)
 
-    if len(test_batch) != 0:
-        # Convert inputs to PyTorch tensors
-        tokens_tensor = torch.nn.utils.rnn.pad_sequence(test_batch, batch_first=True, padding_value=0).to(device)
-        segments_tensor = torch.nn.utils.rnn.pad_sequence(testid_batch, batch_first=True, padding_value=0).to(device)
-        mask_tensor = torch.nn.utils.rnn.pad_sequence(mask_batch, batch_first=True, padding_value=0).to(device)
-        label_tensor = torch.tensor(label_batch, device=device)
-        data_set.append((tokens_tensor, segments_tensor, mask_tensor, label_tensor))
-        test_batch, testid_batch, mask_batch, label_batch = [], [], [], []
-    
+    data_set = TensorDataset(tokens_tensor, segments_tensor, mask_tensor, label_tensor)
+
     print('finish loading dataset', data_name)
     return data_set
 
@@ -200,12 +198,12 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
 
 def init_optimizer(model, learning_rate, warmup_proportion, num_train_epochs, data_size):
     param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'gamma', 'beta']
+    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     num_train_steps = data_size * num_train_epochs
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if n not in no_decay], 'weight_decay_rate': 0.01},
-        {'params': [p for n, p in param_optimizer if n in no_decay], 'weight_decay_rate': 0.0}
-        ]
+        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay_rate': 0.01},
+        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay_rate': 0.0}
+    ]
 
     optimizer = BertAdam(optimizer_grouped_parameters,
                     lr=learning_rate,
@@ -280,6 +278,7 @@ def get_predicted_index(predictions):
 
 
 def get_predicted_score(predictions):
+    predictions = softmax(predictions, axis=1)
     ret = predictions
     if len(predictions.shape) > 1:
         if predictions.shape[1] == 2:
