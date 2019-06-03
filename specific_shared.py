@@ -54,15 +54,15 @@ class SpecificShared(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        bert1 = BertModel.from_pretrained('bert-base-chinese')
-        bert2 = BertModel.from_pretrained('bert-base-chinese')
-        bert3 = BertModel.from_pretrained('bert-base-chinese')
+        bert1 = BertModel.from_pretrained('bert-base-chinese').to("cuda")
+        bert2 = BertModel.from_pretrained('bert-base-chinese').to("cuda")
+        bert3 = BertModel.from_pretrained('bert-base-chinese').to("cuda")
 
         self.embeddings = bert1.embeddings
 
         self.generator = Encoder_Pooler(bert1.encoder, bert1.pooler)
         self.source_net = Encoder_Pooler(bert2.encoder, bert2.pooler)
-        self.target_net = Encoder_Pooler(bert3.encoder, bert2.pooler)
+        self.target_net = Encoder_Pooler(bert3.encoder, bert3.pooler)
 
         n_feats = 768
         num_classes = int(config['num_classes'])
@@ -89,6 +89,11 @@ class SpecificShared(nn.Module):
             nn.Linear(n_feats * 2, num_classes),
             # nn.LogSoftmax(1)
         )
+
+        # # print("generator:", list(self.generator.parameters())[37])
+        # # print("target:", list(self.target_net.parameters())[37])
+        # for i in range(194):
+        #     print(all(list(self.generator.parameters())[1] == list(self.target_net.parameters())[1]))
 
         self.use_adv_loss = config.getboolean('use_adv_loss')
         self.use_orth_constraint = config.getboolean('use_orth_constraint')
@@ -120,6 +125,7 @@ class SpecificShared(nn.Module):
 
         if source:
             _, feat_specific = self.source_net(embedding_output, extended_attention_mask, output_all_encoded_layers=False)
+            # print('should be no source')
         else:
             _, feat_specific = self.target_net(embedding_output, extended_attention_mask, output_all_encoded_layers=False)
 

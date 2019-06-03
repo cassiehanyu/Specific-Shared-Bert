@@ -14,9 +14,10 @@ class nBert(nn.Module):
         self.n = int(config['number'])
         self.loss = config['loss']
 
-        bert = BertModel.from_pretrained('bert-base-uncased')
+        bert_model = config['bert_model']
+        bert = BertModel.from_pretrained(bert_model)
         # bert2 = BertModel.from_pretrained('bert-base-chinese')
-        bert3 = BertModel.from_pretrained('bert-base-uncased')
+        bert3 = BertModel.from_pretrained(bert_model)
         self.embeddings = bert.embeddings
 
         n_feats = 768
