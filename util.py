@@ -211,9 +211,9 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
 
 def init_optimizer(model, learning_rate, warmup_proportion, num_train_epochs, data_size, freeze_bert_layer=False):
     param_optimizer = list(model.named_parameters())
-    freeze_list = []
+    freeze_list = ['embeddings']
     for i in range(8):
-        freeze_list.append(f'layer.{i}')
+        freeze_list.append(f'layer.{i}.')
     if freeze_bert_layer:
         for name, param in param_optimizer:
             if any(x in name for x in freeze_list):
