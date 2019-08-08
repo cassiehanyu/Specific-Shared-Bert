@@ -1,5 +1,5 @@
 from tqdm import tqdm
-import random 
+import random
 import os
 import numpy as np
 
@@ -10,7 +10,8 @@ from scipy.special import softmax
 
 from pydoc import locate
 
-from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM, BertForSequenceClassification, BertForNextSentencePrediction
+from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM, BertForSequenceClassification, \
+    BertForNextSentencePrediction
 from pytorch_pretrained_bert.optimization import BertAdam
 from specific_shared import SpecificShared
 from siamese_bert import SiameseBert
@@ -41,7 +42,7 @@ def load_pretrained_model_tokenizer(model_type="BertForSequenceClassification", 
     else:
         print("[Error]: unsupported model type")
         return None, None
-    
+
     tokenizer = BertTokenizer.from_pretrained(bert_model)
     model.to(device)
     print("Initialized model and tokenizer")
@@ -64,7 +65,7 @@ def tokenize_one(text, tokenizer):
     tokens = tokenizer.tokenize(text)
 
     if len(tokens) > max_length - 2:
-        tokens = tokens[:(max_length-2)]
+        tokens = tokens[:(max_length - 2)]
 
     tokens = ["[CLS]"] + tokens + ["[SEP]"]
     segments_ids = [0] * len(tokens)
@@ -152,19 +153,25 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
 
         if len(test_batch_left) >= batch_size:
             # Convert inputs to PyTorch tensors
-            tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(device)
-            tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True, padding_value=0).to(device)
+            tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(
+                device)
+            tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True,
+                                                                  padding_value=0).to(device)
 
-            segments_tensor_left = torch.nn.utils.rnn.pad_sequence(testid_batch_left, batch_first=True, padding_value=0).to(device)
-            segments_tensor_right = torch.nn.utils.rnn.pad_sequence(testid_batch_right, batch_first=True, padding_value=0).to(device)
+            segments_tensor_left = torch.nn.utils.rnn.pad_sequence(testid_batch_left, batch_first=True,
+                                                                   padding_value=0).to(device)
+            segments_tensor_right = torch.nn.utils.rnn.pad_sequence(testid_batch_right, batch_first=True,
+                                                                    padding_value=0).to(device)
 
-            mask_tensor_left = torch.nn.utils.rnn.pad_sequence(mask_batch_left, batch_first=True, padding_value=0).to(device)
-            mask_tensor_right = torch.nn.utils.rnn.pad_sequence(mask_batch_right, batch_first=True, padding_value=0).to(device)
+            mask_tensor_left = torch.nn.utils.rnn.pad_sequence(mask_batch_left, batch_first=True, padding_value=0).to(
+                device)
+            mask_tensor_right = torch.nn.utils.rnn.pad_sequence(mask_batch_right, batch_first=True, padding_value=0).to(
+                device)
 
             label_tensor = torch.tensor(label_batch, device=device)
 
             data_set.append((tokens_tensor_left, segments_tensor_left, mask_tensor_left,
-             tokens_tensor_right, segments_tensor_right, mask_tensor_right, label_tensor))
+                             tokens_tensor_right, segments_tensor_right, mask_tensor_right, label_tensor))
 
             test_batch_left, testid_batch_left, mask_batch_left = [], [], []
             test_batch_right, testid_batch_right, mask_batch_right = [], [], []
@@ -173,19 +180,25 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
 
     if len(test_batch_left) != 0:
         # Convert inputs to PyTorch tensors
-        tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(device)
-        tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True, padding_value=0).to(device)
+        tokens_tensor_left = torch.nn.utils.rnn.pad_sequence(test_batch_left, batch_first=True, padding_value=0).to(
+            device)
+        tokens_tensor_right = torch.nn.utils.rnn.pad_sequence(test_batch_right, batch_first=True, padding_value=0).to(
+            device)
 
-        segments_tensor_left = torch.nn.utils.rnn.pad_sequence(testid_batch_left, batch_first=True, padding_value=0).to(device)
-        segments_tensor_right = torch.nn.utils.rnn.pad_sequence(testid_batch_right, batch_first=True, padding_value=0).to(device)
+        segments_tensor_left = torch.nn.utils.rnn.pad_sequence(testid_batch_left, batch_first=True, padding_value=0).to(
+            device)
+        segments_tensor_right = torch.nn.utils.rnn.pad_sequence(testid_batch_right, batch_first=True,
+                                                                padding_value=0).to(device)
 
-        mask_tensor_left = torch.nn.utils.rnn.pad_sequence(mask_batch_left, batch_first=True, padding_value=0).to(device)
-        mask_tensor_right = torch.nn.utils.rnn.pad_sequence(mask_batch_right, batch_first=True, padding_value=0).to(device)
+        mask_tensor_left = torch.nn.utils.rnn.pad_sequence(mask_batch_left, batch_first=True, padding_value=0).to(
+            device)
+        mask_tensor_right = torch.nn.utils.rnn.pad_sequence(mask_batch_right, batch_first=True, padding_value=0).to(
+            device)
 
         label_tensor = torch.tensor(label_batch, device=device)
 
         data_set.append((tokens_tensor_left, segments_tensor_left, mask_tensor_left,
-             tokens_tensor_right, segments_tensor_right, mask_tensor_right, label_tensor))
+                         tokens_tensor_right, segments_tensor_right, mask_tensor_right, label_tensor))
 
         test_batch_left, testid_batch_left, mask_batch_left = [], [], []
         test_batch_right, testid_batch_right, mask_batch_right = [], [], []
@@ -196,8 +209,15 @@ def load_data2(data_path, dataset, data_name, batch_size, tokenizer, device="cud
     return data_set
 
 
-def init_optimizer(model, learning_rate, warmup_proportion, num_train_epochs, data_size):
+def init_optimizer(model, learning_rate, warmup_proportion, num_train_epochs, data_size, freeze_bert_layer=False):
     param_optimizer = list(model.named_parameters())
+    freeze_list = []
+    for i in range(8):
+        freeze_list.append(f'layer.{i}')
+    if freeze_bert_layer:
+        for name, param in param_optimizer:
+            if any(x in name for x in freeze_list):
+                param.requires_grad = False
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     num_train_steps = data_size * num_train_epochs
     optimizer_grouped_parameters = [
@@ -206,10 +226,10 @@ def init_optimizer(model, learning_rate, warmup_proportion, num_train_epochs, da
     ]
 
     optimizer = BertAdam(optimizer_grouped_parameters,
-                    lr=learning_rate,
-                    warmup=warmup_proportion,
-                    t_total=num_train_steps)
-    
+                         lr=learning_rate,
+                         warmup=warmup_proportion,
+                         t_total=num_train_steps)
+
     return optimizer
 
 
@@ -217,15 +237,18 @@ def init_loss():
     # return nn.NLLLoss()
     return nn.CrossEntropyLoss()
 
+
 def tokenize_index(text, tokenizer):
     tokenized_text = tokenizer.tokenize(text)
     # Convert token to vocabulary indices
     indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
     return indexed_tokens
 
+
 def get_acc(prediction_index_list, labels):
     acc = sum(np.array(prediction_index_list) == np.array(labels))
     return acc / len(labels)
+
 
 def get_pre_rec_f1(prediction_index_list, labels):
     tp, tn, fp, fn = 0, 0, 0, 0
@@ -246,6 +269,7 @@ def get_pre_rec_f1(prediction_index_list, labels):
     f1 = 2 * precision * recall / (precision + recall + eps)
     return precision, recall, f1
 
+
 def get_p1(prediction_score_list, labels, data_path, dataset, data_name):
     f = open(os.path.join(data_path, "{}/{}.csv".format(dataset, data_name)))
     a2score_label = {}
@@ -254,7 +278,7 @@ def get_p1(prediction_score_list, labels, data_path, dataset, data_name):
         if a not in a2score_label:
             a2score_label[a] = []
         a2score_label[a].append((p, l))
-    
+
     acc = 0
     no_true = 0
     for a in a2score_label:
@@ -265,7 +289,7 @@ def get_p1(prediction_score_list, labels, data_path, dataset, data_name):
             no_true += 1
 
     p1 = acc / (len(a2score_label) - no_true)
-    
+
     return p1
 
 
